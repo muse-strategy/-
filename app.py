@@ -87,8 +87,13 @@ def load_metric_data(file):
 def load_lottery_data(file):
     try:
         df_lot = pd.read_excel(file, sheet_name="抽奖记录")
-        if "日期" in df_lot.columns:
+        # 优先用"抽奖时间"列作为真实日期，没有才用"日期"列
+        if "抽奖时间" in df_lot.columns:
+            df_lot["dt"] = pd.to_datetime(df_lot["抽奖时间"], errors="coerce").dt.date
+        elif "日期" in df_lot.columns:
             df_lot["dt"] = df_lot["日期"].apply(parse_date)
+        else:
+            df_lot["dt"] = None
         if "用户id" in df_lot.columns:
             df_lot["用户id脱敏"] = df_lot["用户id"].apply(mask_user_id)
         return df_lot
@@ -250,9 +255,14 @@ st.divider()
 
 st.subheader("🔹抽奖记录明细")
 if not df_lottery.empty:
+    lot_all_dates = sorted(df_lottery["dt"].dropna().unique())
     lt1, lt2, lt3, lt4, lt5 = st.columns(5)
     with lt1:
-        lot_dates = st.date_input("抽奖日期筛选", key="lotdate")
+        lot_dates = st.date_input(
+            "抽奖日期范围",
+            value=(lot_all_dates[0], lot_all_dates[-1]) if lot_all_dates else None,
+            key="lotdate"
+        )
     with lt2:
         sel_ak = st.multiselect("活动key", df_lottery["活动key"].dropna().unique().tolist())
     with lt3:
@@ -285,7 +295,8 @@ if not df_lottery.empty:
         "dt", "用户id脱敏", "活动key", "场次key", "礼品",
         "礼品类型", "抽奖结果", "抽奖时间"
     ] if c in df_lot_filter.columns]
-    st.dataframe(df_lot_filter[show_cols], use_container_width=True, height=300)
+    display_df = df_lot_filter[show_cols].rename(columns={"dt": "抽奖日期"})
+    st.dataframe(display_df, use_container_width=True, height=300)
 else:
     st.info("抽奖记录数据为空，请确认Excel存在【抽奖记录】工作表")
 
