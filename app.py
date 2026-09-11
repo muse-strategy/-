@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime
+import os
 
-# ====================== 【可配置区，核对你的Excel工作表名称】 ======================
+# ====================== 【可配置区】 ======================
 QR_CODE_CONFIG = {
     "二维码1": "校边店海报1",
     "二维码2": "校边店海报2",
@@ -11,7 +12,8 @@ QR_CODE_CONFIG = {
     "二维码4": "校边店海报4"
 }
 YEAR_DEFAULT = 2026
-# ==================================================================================
+EXCEL_FILE = "AI大阅读抽奖数据.xlsx"
+# =========================================================
 
 st.set_page_config(page_title="活动数据看板", layout="wide")
 st.markdown("""
@@ -29,9 +31,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.title("📊 活动数据看板")
 
-upload_file = st.file_uploader("上传你的Excel数据文件(.xlsx)", type="xlsx")
-if upload_file is None:
-    st.info("请上传Excel文件，加载数据看板")
+# ====== 自动加载内置Excel，上传框保留备用 ======
+data_source = None
+if os.path.exists(EXCEL_FILE):
+    data_source = open(EXCEL_FILE, "rb")
+    st.success("✅ 已自动加载数据，直接查看看板")
+else:
+    st.warning("未找到内置Excel，请在下方上传")
+
+upload_file = st.file_uploader("【可选】上传新版Excel覆盖", type="xlsx")
+if upload_file is not None:
+    data_source = upload_file
+    st.info("已切换为你上传的文件")
+
+if data_source is None:
     st.stop()
 
 
@@ -84,8 +97,8 @@ def load_lottery_data(file):
         return pd.DataFrame()
 
 
-df_metric = load_metric_data(upload_file)
-df_lottery = load_lottery_data(upload_file)
+df_metric = load_metric_data(data_source)
+df_lottery = load_lottery_data(data_source)
 
 if df_metric.empty:
     st.error("指标数据为空，请检查Excel工作表名称是否匹配代码配置")
@@ -99,7 +112,6 @@ pct_metrics = ["落地页转化率", "下单页转化率", "支付成功率", "�
 all_metrics = count_metrics + pct_metrics
 existing_metrics = [c for c in all_metrics if c in df_metric.columns]
 
-# ============ 全局日期范围 ============
 all_dates = sorted(df_metric["dt"].dropna().unique())
 start_dt, end_dt = st.date_input(
     "全局日期范围",
@@ -109,7 +121,6 @@ df_filter = df_metric[
     (df_metric["dt"] >= start_dt) & (df_metric["dt"] <= end_dt)
 ].copy()
 
-# ============ 单日选择器（核心数据+横向对比共用） ============
 day_list = sorted(df_filter["dt"].dropna().unique())
 sel_day = st.selectbox(
     "选择单日", day_list,
@@ -117,7 +128,6 @@ sel_day = st.selectbox(
 )
 df_day = df_filter[df_filter["dt"] == sel_day].copy()
 
-# ============ 模块1：核心数据（美化卡片） ============
 st.subheader(f"🔹核心数据（{sel_day}）")
 row_sum = df_day[count_metrics].sum(numeric_only=True)
 c1, c2, c3, c4, c5 = st.columns(5)
@@ -146,7 +156,6 @@ with c5:
 
 st.divider()
 
-# ============ 模块2：单日二维码横向对比 ============
 st.subheader("🔹二维码横向对比")
 qr_cols = list(QR_CODE_CONFIG.keys())
 for c in pct_metrics:
@@ -175,17 +184,12 @@ st.dataframe(compare_df, use_container_width=True)
 
 st.divider()
 
-# ============ 模块3：环比增长率 ============
 st.subheader("🔹各指标环比增长率（当日 vs 前一日）")
 ring_c1, ring_c2 = st.columns(2)
 with ring_c1:
-    sel_ring_metric = st.selectbox(
-        "选择指标", count_metrics, index=0, key="ring_metric_select"
-    )
+    sel_ring_metric = st.selectbox("选择指标", count_metrics, index=0, key="ring_metric_select")
 with ring_c2:
-    sel_ring_qr = st.multiselect(
-        "选择二维码（不选=全部）", qr_cols, default=qr_cols
-    )
+    sel_ring_qr = st.multiselect("选择二维码（不选=全部）", qr_cols, default=qr_cols)
 
 daily = df_filter.groupby(["dt", "二维码名称"])[sel_ring_metric].sum().reset_index()
 daily = daily.sort_values(["二维码名称", "dt"]).reset_index(drop=True)
@@ -230,7 +234,6 @@ st.dataframe(
 
 st.divider()
 
-# ============ 模块4：每日趋势图（Altair，X轴日期横向） ============
 st.subheader("🔹每日趋势")
 trend_metric = st.selectbox("选择指标", count_metrics, key="trend_select")
 trend_df = df_filter.groupby(["dt", "二维码名称"])[trend_metric].sum().reset_index()
@@ -245,7 +248,6 @@ st.altair_chart(chart, use_container_width=True)
 
 st.divider()
 
-# ============ 模块5：抽奖明细 ============
 st.subheader("🔹抽奖记录明细")
 if not df_lottery.empty:
     lt1, lt2, lt3, lt4, lt5 = st.columns(5)
@@ -288,4 +290,4 @@ else:
     st.info("抽奖记录数据为空，请确认Excel存在【抽奖记录】工作表")
 
 st.markdown("---")
-st.caption("说明：核心数据+横向对比跟随单日选择器；环比=当日 vs 前一日，涨绿跌红；百分比保留两位小数。")
+st.caption("说明：打开网页自动加载内置数据；如需更新，替换Excel后git push即可。")
