@@ -292,11 +292,10 @@ if not df_lottery.empty:
         ]
 
     show_cols = [c for c in [
-        "dt", "用户id脱敏", "活动key", "场次key", "礼品",
+        "用户id脱敏", "活动key", "场次key", "礼品",
         "礼品类型", "抽奖结果", "抽奖时间"
     ] if c in df_lot_filter.columns]
-    display_df = df_lot_filter[show_cols].rename(columns={"dt": "抽奖日期"})
-    st.dataframe(display_df, use_container_width=True, height=300)
+    st.dataframe(df_lot_filter[show_cols], use_container_width=True, height=300)
 else:
     st.info("抽奖记录数据为空，请确认Excel存在【抽奖记录】工作表")
 
