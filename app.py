@@ -117,6 +117,25 @@ pct_metrics = ["落地页转化率", "下单页转化率", "支付成功率", "�
 all_metrics = count_metrics + pct_metrics
 existing_metrics = [c for c in all_metrics if c in df_metric.columns]
 
+# 统一清洗指标列：文本"-"、空值、带%的文本都安全转数字，无法转的置NaN
+for c in existing_metrics:
+    def _clean(val):
+        if val is None or pd.isna(val):
+            return float("nan")
+        if isinstance(val, str):
+            val = val.strip().replace("%", "")
+            if val in ("", "-", "--", "null", "None"):
+                return float("nan")
+            try:
+                return float(val)
+            except ValueError:
+                return float("nan")
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return float("nan")
+    df_metric[c] = df_metric[c].apply(_clean)
+
 all_dates = sorted(df_metric["dt"].dropna().unique())
 start_dt, end_dt = st.date_input(
     "全局日期范围",
@@ -155,34 +174,35 @@ with c4:
 with c5:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
     if "成单率" in df_day.columns:
-        v = df_day["成单率"].replace("-", None).dropna().astype(float).mean()
-        st.metric("成单率", f"{v*100:.2f}%" if v < 1.5 else f"{v:.2f}%")
+        v_series = df_day["成单率"].dropna()
+        if len(v_series) > 0:
+            v = v_series.mean()
+            st.metric("成单率", f"{v*100:.2f}%" if v < 1.5 else f"{v:.2f}%")
+        else:
+            st.metric("成单率", "—")
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
 st.subheader("🔹二维码横向对比")
 qr_cols = list(QR_CODE_CONFIG.keys())
-for c in pct_metrics:
-    if c in df_day.columns:
-        df_day[c] = pd.to_numeric(df_day[c].replace("-", None), errors="coerce")
 
 compare_rows = []
 for m in existing_metrics:
     row = {"指标": m}
     vals = []
     for qr in qr_cols:
-        val = df_day[df_day["二维码名称"] == qr][m].sum()
+        val = df_day[df_day["二维码名称"] == qr][m].sum(min_count=1)
         vals.append(val)
         if m in pct_metrics:
             row[qr] = "—" if (pd.isna(val) or val == 0) else f"{val*100:.2f}%"
         else:
-            row[qr] = "—" if pd.isna(val) else int(val)
+            row[qr] = "—" if pd.isna(val) else str(int(round(val)))
     total = sum(v for v in vals if not pd.isna(v))
     if m in pct_metrics:
         row["合计"] = "—" if total == 0 else f"{total*100:.2f}%"
     else:
-        row["合计"] = int(total)
+        row["合计"] = "—" if total == 0 else str(int(round(total)))
     compare_rows.append(row)
 compare_df = pd.DataFrame(compare_rows).set_index("指标")
 st.dataframe(compare_df, use_container_width=True)
